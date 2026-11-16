@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
+  AlertTriangle,
   Bot,
   FileText,
   Mic,
   MicOff,
   Send,
+  Settings,
   Sparkles,
   Square,
   Trash2,
@@ -536,6 +539,29 @@ export function InvoiceAiAssistant({
                 بالأرقام الدقيقة من فواتيرك مع نطق الإجابة بالصوت.
               </p>
 
+              {!aiStatus.enabled && (
+                <div className="mt-4 w-full max-w-lg rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-right">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                    <div className="flex-1 text-xs leading-relaxed text-amber-100">
+                      <p className="font-bold text-amber-200">الذكاء الاصطناعي غير مفعّل حاليًا</p>
+                      <p className="mt-1 text-amber-100/85">
+                        لتشغيل المحادثة الصوتية وتحليل الفواتير عبر Gemini، أضف مفتاح Google API من
+                        صفحة الإعدادات (يُحفظ بأمان لحسابك).
+                      </p>
+                      <Link
+                        href="/settings#ai-setup"
+                        onClick={onClose}
+                        className="mt-2.5 inline-flex items-center gap-1.5 rounded-xl border border-amber-400/50 bg-amber-500/20 px-3 py-1.5 font-semibold text-amber-100 transition hover:bg-amber-500/30"
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                        <span>فتح إعدادات تفعيل Google API</span>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="mt-5 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
                 {QUICK_PROMPTS.map((q) => (
                   <button
@@ -657,6 +683,20 @@ export function InvoiceAiAssistant({
 
         {/* Input + Mic Controls */}
         <div className="border-t border-slate-800/90 bg-slate-900/75 p-4">
+          {!aiStatus.enabled && (
+            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              <span>الذكاء الاصطناعي غير مفعّل — أضف مفتاح Google API لتشغيل الدردشة والصوت.</span>
+              <Link
+                href="/settings#ai-setup"
+                onClick={onClose}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/20 px-2.5 py-1 font-semibold text-amber-100 hover:bg-amber-500/30"
+              >
+                <Settings className="h-3 w-3" />
+                <span>تفعيل الآن</span>
+              </Link>
+            </div>
+          )}
+
           {errorMsg && (
             <p className="mb-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
               {errorMsg}
@@ -714,7 +754,9 @@ export function InvoiceAiAssistant({
                   ? "اضغط لإيقاف التسجيل وإرسال السؤال الصوتي"
                   : canChat
                     ? "تحدث بصوتك مع المساعد عن الفواتير"
-                    : "المساعد الصوتي متوقف مؤقتًا لعدم توفر رصيد AI"
+                    : !aiStatus.enabled
+                      ? "الذكاء الاصطناعي غير مفعّل — أضف مفتاح Google API من الإعدادات"
+                      : "المساعد الصوتي متوقف مؤقتًا لعدم توفر رصيد AI"
               }
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition ${
                 recording
@@ -735,7 +777,9 @@ export function InvoiceAiAssistant({
               placeholder={
                 canChat
                   ? "اكتب سؤالك عن الفواتير أو اضغط الميكروفون للتحدث..."
-                  : "لا يوجد رصيد AI متاح حاليًا — يمكنك فحص الرصيد من أعلى الصفحة"
+                  : !aiStatus.enabled
+                    ? "الذكاء الاصطناعي غير مفعّل — افتح الإعدادات لإدخال مفتاح Google API"
+                    : "لا يوجد رصيد AI متاح حاليًا — يمكنك فحص الرصيد من أعلى الصفحة"
               }
               className="h-11 flex-1 rounded-2xl border border-slate-700 bg-slate-950/90 px-4 text-sm text-white placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none disabled:opacity-50"
             />

@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const analyzer = buildServerAiAnalyzer(auth.supabase);
+  const analyzer = await buildServerAiAnalyzer(auth.supabase, auth.user.id);
 
   try {
     const { audioBuffer, mimeType, model } = await analyzer.synthesizeArabicSpeech({

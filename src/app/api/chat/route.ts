@@ -95,7 +95,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const analyzer = buildServerAiAnalyzer(supabase);
+  const analyzer = await buildServerAiAnalyzer(supabase, user.id);
 
   try {
     const invoices = await listUserInvoices(supabase, user.id);

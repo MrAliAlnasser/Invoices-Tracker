@@ -354,9 +354,11 @@ export class GeminiArabicInvoiceAnalyzer {
   private readonly cooldownSeconds: number;
   private readonly store: CooldownStore;
   private readonly client: GenAiLikeClient | null;
+  private readonly keySource: "env" | "user_settings" | "none";
 
   constructor(options: {
     apiKey: string | null;
+    keySource?: "env" | "user_settings" | "none";
     models?: string[];
     ttsModels?: string[];
     ttsVoice?: string;
@@ -373,6 +375,8 @@ export class GeminiArabicInvoiceAnalyzer {
     this.ttsVoice = (options.ttsVoice ?? DEFAULT_GEMINI_TTS_VOICE).trim() || DEFAULT_GEMINI_TTS_VOICE;
     this.cooldownSeconds = Math.max(10, options.cooldownSeconds ?? 300);
     this.store = options.store ?? new MemoryCooldownStore();
+    this.keySource =
+      options.keySource ?? (options.apiKey || options.client ? "env" : "none");
     this.client =
       options.client ??
       (options.apiKey
@@ -391,8 +395,9 @@ export class GeminiArabicInvoiceAnalyzer {
         active_model: null,
         retry_after_seconds: 0,
         last_error_code: null,
-        last_error: "GEMINI_API_KEY غير مضبوط.",
+        last_error: "لم يُضف مفتاح GEMINI_API_KEY في إعدادات Vercel أو داخل صفحة الإعدادات.",
         checked_at: null,
+        key_source: "none",
       };
     }
 
@@ -452,6 +457,7 @@ export class GeminiArabicInvoiceAnalyzer {
       last_error_code: latestErrorRow?.last_error_code ?? null,
       last_error: latestErrorRow?.last_error_message ?? null,
       checked_at: latestErrorRow?.updated_at ?? latestSuccessRow?.last_success_at ?? null,
+      key_source: this.keySource,
     };
   }
 

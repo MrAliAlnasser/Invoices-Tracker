@@ -42,11 +42,33 @@ export function requirePublicSupabaseEnv(): { url: string; anonKey: string } {
   return { url, anonKey };
 }
 
+export function resolveEnvGeminiApiKey(): string | null {
+  const candidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+    process.env.GOOGLE_AI_STUDIO_API_KEY,
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY,
+  ];
+  for (const candidate of candidates) {
+    const cleaned = (candidate ?? "").trim();
+    if (cleaned) return cleaned;
+  }
+  return null;
+}
+
+export function maskApiKey(key: string | null | undefined): string | null {
+  const cleaned = (key ?? "").trim();
+  if (!cleaned) return null;
+  if (cleaned.length <= 10) return "••••••••";
+  return `${cleaned.slice(0, 5)}••••${cleaned.slice(-4)}`;
+}
+
 export function getServerEnv() {
   const { url: supabaseUrl, anonKey: supabaseAnonKey } = requirePublicSupabaseEnv();
   const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
   const storageBucket = (process.env.SUPABASE_STORAGE_BUCKET ?? "invoices").trim() || "invoices";
-  const geminiApiKey = (process.env.GEMINI_API_KEY ?? "").trim() || null;
+  const geminiApiKey = resolveEnvGeminiApiKey();
 
   const rawModels = process.env.GEMINI_MODELS;
   const parsedModels = rawModels

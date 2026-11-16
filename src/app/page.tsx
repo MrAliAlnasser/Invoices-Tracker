@@ -22,7 +22,7 @@ export default async function HomePage() {
   }
 
   const supabase = await createSupabaseServerClient();
-  const analyzer = buildServerAiAnalyzer(supabase);
+  const analyzer = await buildServerAiAnalyzer(supabase, user.id);
 
   const [invoices, settings, aiStatus] = await Promise.all([
     listUserInvoices(supabase, user.id),

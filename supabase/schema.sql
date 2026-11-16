@@ -7,8 +7,12 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
   require_line_by_line_review BOOLEAN NOT NULL DEFAULT true,
   default_currency TEXT NOT NULL DEFAULT 'SAR',
   auto_delete_days INTEGER NULL CHECK (auto_delete_days IS NULL OR auto_delete_days BETWEEN 1 AND 3650),
+  custom_gemini_api_key TEXT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.user_settings
+  ADD COLUMN IF NOT EXISTS custom_gemini_api_key TEXT NULL;
 
 -- 2. Invoices master table
 CREATE TABLE IF NOT EXISTS public.invoices (

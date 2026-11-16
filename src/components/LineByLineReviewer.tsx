@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
   Pencil,
   RotateCw,
   Settings,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
@@ -75,6 +76,23 @@ const HEADER_FIELD_DEFS: Array<{
   { key: "vat_amount", label: "ضريبة القيمة المضافة VAT", type: "money" },
   { key: "grand_total", label: "الإجمالي النهائي", type: "money" },
 ];
+
+const PRESET_CATEGORIES = [
+  "مشتريات عامة",
+  "مستلزمات مكتبية",
+  "مواد غذائية",
+  "إلكترونيات",
+  "صيانة",
+  "وقود",
+  "خدمات",
+  "أخرى",
+];
+
+const PRESET_CURRENCIES = ["SAR", "AED", "KWD", "QAR", "BHD", "OMR", "EGP", "JOD", "USD", "EUR"];
+
+function normalizeDecimalDraft(raw: string): string {
+  return normalizeArabicDigits(raw).replace(/[٫،]/g, ".");
+}
 
 function statusBadgeMeta(status: ItemReviewStatus) {
   switch (status) {
@@ -144,7 +162,15 @@ export function LineByLineReviewer({
   const totalSteps = HEADER_FIELD_DEFS.length + items.length;
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [addingItem, setAddingItem] = useState(false);
+  const [draftNumbers, setDraftNumbers] = useState<Record<string, string>>({});
+  const stepRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    stepRowRefs.current[activeIndex]?.scrollIntoView({
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }, [activeIndex]);
 
   // Preview visual controls
   const [zoom, setZoom] = useState<number>(100);
@@ -178,6 +204,7 @@ export function LineByLineReviewer({
   const advanceFrom = useCallback(
     (currentIdx: number) => {
       setEditingIndex(null);
+      setDraftNumbers({});
       if (currentIdx + 1 < totalSteps) {
         setActiveIndex(currentIdx + 1);
       }
@@ -245,7 +272,19 @@ export function LineByLineReviewer({
     const newStepIdx = HEADER_FIELD_DEFS.length + nextIdx;
     setActiveIndex(newStepIdx);
     setEditingIndex(newStepIdx);
-    setAddingItem(false);
+    setDraftNumbers({});
+  };
+
+  const handleRemoveLineItem = (itemIdx: number) => {
+    const nextTotalSteps = HEADER_FIELD_DEFS.length + Math.max(0, items.length - 1);
+    setItems((prev) =>
+      prev
+        .filter((_, idx) => idx !== itemIdx)
+        .map((it, idx) => ({ ...it, line_index: idx }))
+    );
+    setActiveIndex((cur) => Math.max(0, Math.min(nextTotalSteps - 1, cur)));
+    setEditingIndex(null);
+    setDraftNumbers({});
   };
 
   const submitVerification = async (approveRemaining: boolean) => {
@@ -312,6 +351,7 @@ export function LineByLineReviewer({
       if (e.key === "Escape") {
         if (editingIndex !== null) {
           setEditingIndex(null);
+          setDraftNumbers({});
         } else {
           onClose();
         }
@@ -335,6 +375,7 @@ export function LineByLineReviewer({
         }
       } else if (e.key.toLowerCase() === "e") {
         e.preventDefault();
+        setDraftNumbers({});
         setEditingIndex(activeIndex);
       } else if (e.key.toLowerCase() === "x") {
         e.preventDefault();
@@ -572,6 +613,9 @@ export function LineByLineReviewer({
                     return (
                       <div
                         key={def.key}
+                        ref={(el) => {
+                          stepRowRefs.current[idx] = el;
+                        }}
                         onClick={() => setActiveIndex(idx)}
                         className={`cursor-pointer rounded-2xl border p-3 transition ${
                           isActive
@@ -606,6 +650,7 @@ export function LineByLineReviewer({
                               type="button"
                               onClick={() => {
                                 setActiveIndex(idx);
+                                setDraftNumbers({});
                                 setEditingIndex(isEditing ? null : idx);
                               }}
                               className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/25"
@@ -629,15 +674,23 @@ export function LineByLineReviewer({
                             <div className="flex flex-wrap items-center gap-2">
                               {def.type === "money" ? (
                                 <input
-                                  type="number"
-                                  step="0.01"
-                                  value={Number(rawVal)}
-                                  onChange={(e) =>
-                                    setHeader((prev) => ({
-                                      ...prev,
-                                      [def.key]: roundCurrency(Number.parseFloat(e.target.value) || 0),
-                                    }))
-                                  }
+                                  type="text"
+                                  inputMode="decimal"
+                                  dir="ltr"
+                                  value={draftNumbers[`h:${def.key}`] ?? String(Number(rawVal))}
+                                  onChange={(e) => {
+                                    const draft = normalizeDecimalDraft(e.target.value);
+                                    setDraftNumbers((prev) => ({ ...prev, [`h:${def.key}`]: draft }));
+                                    const parsed = Number.parseFloat(draft);
+                                    if (draft === "") {
+                                      setHeader((prev) => ({ ...prev, [def.key]: 0 }));
+                                    } else if (Number.isFinite(parsed)) {
+                                      setHeader((prev) => ({
+                                        ...prev,
+                                        [def.key]: roundCurrency(parsed),
+                                      }));
+                                    }
+                                  }}
                                   className="w-44 rounded-lg border border-indigo-400/60 bg-slate-950 px-3 py-1.5 font-mono text-sm text-white focus:outline-none"
                                   autoFocus
                                 />
@@ -679,6 +732,57 @@ export function LineByLineReviewer({
                     );
                   })}
                 </div>
+
+                {/* Category & Currency Metadata Bar */}
+                <div className="mt-3 grid grid-cols-1 gap-2 rounded-2xl border border-slate-800 bg-slate-900/45 p-3 sm:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="reviewer-category"
+                      className="mb-1 block text-[11px] font-medium text-slate-400"
+                    >
+                      تصنيف المصروفات
+                    </label>
+                    <select
+                      id="reviewer-category"
+                      value={header.category}
+                      onChange={(e) => setHeader((prev) => ({ ...prev, category: e.target.value }))}
+                      className="h-9 w-full rounded-xl border border-slate-700 bg-slate-950 px-2.5 text-xs text-slate-100 focus:border-indigo-400 focus:outline-none"
+                    >
+                      {(PRESET_CATEGORIES.includes(header.category)
+                        ? PRESET_CATEGORIES
+                        : [header.category, ...PRESET_CATEGORIES].filter(Boolean)
+                      ).map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="reviewer-currency"
+                      className="mb-1 block text-[11px] font-medium text-slate-400"
+                    >
+                      العملة
+                    </label>
+                    <select
+                      id="reviewer-currency"
+                      value={header.currency}
+                      onChange={(e) => setHeader((prev) => ({ ...prev, currency: e.target.value }))}
+                      className="h-9 w-full rounded-xl border border-slate-700 bg-slate-950 px-2.5 font-mono text-xs text-slate-100 focus:border-indigo-400 focus:outline-none"
+                    >
+                      {(PRESET_CURRENCIES.includes(header.currency)
+                        ? PRESET_CURRENCIES
+                        : [header.currency, ...PRESET_CURRENCIES].filter(Boolean)
+                      ).map((curr) => (
+                        <option key={curr} value={curr}>
+                          {curr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
 
               {/* Section 2: Invoice Line Items */}
@@ -689,7 +793,6 @@ export function LineByLineReviewer({
                   </h3>
                   <button
                     type="button"
-                    disabled={addingItem}
                     onClick={handleAddLineItem}
                     className="rounded-lg border border-slate-700 bg-slate-800/80 px-2.5 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-700"
                   >
@@ -712,6 +815,9 @@ export function LineByLineReviewer({
                       return (
                         <div
                           key={`${item.id ?? "new"}-${itemIdx}`}
+                          ref={(el) => {
+                            stepRowRefs.current[stepIdx] = el;
+                          }}
                           onClick={() => setActiveIndex(stepIdx)}
                           className={`cursor-pointer rounded-2xl border p-3 transition ${
                             isActive
@@ -748,6 +854,7 @@ export function LineByLineReviewer({
                                 type="button"
                                 onClick={() => {
                                   setActiveIndex(stepIdx);
+                                  setDraftNumbers({});
                                   setEditingIndex(isEditing ? null : stepIdx);
                                 }}
                                 className="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/25"
@@ -762,6 +869,15 @@ export function LineByLineReviewer({
                               >
                                 <X className="h-3.5 w-3.5" />
                                 <span>غير صحيح</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveLineItem(itemIdx)}
+                                title="حذف البند"
+                                aria-label="حذف البند"
+                                className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-800/80 p-1.5 text-slate-400 hover:border-rose-500/40 hover:text-rose-300"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             </div>
                           </div>
@@ -783,11 +899,22 @@ export function LineByLineReviewer({
                                   className="rounded-lg border border-indigo-400/60 bg-slate-950 px-2.5 py-1.5 text-xs text-white sm:col-span-5"
                                 />
                                 <input
-                                  type="number"
-                                  step="0.001"
-                                  value={item.quantity}
+                                  type="text"
+                                  inputMode="decimal"
+                                  dir="ltr"
+                                  value={draftNumbers[`i:${itemIdx}:qty`] ?? String(item.quantity)}
                                   onChange={(e) => {
-                                    const qty = Number.parseFloat(e.target.value) || 0;
+                                    const draft = normalizeDecimalDraft(e.target.value);
+                                    setDraftNumbers((prev) => ({ ...prev, [`i:${itemIdx}:qty`]: draft }));
+                                    const parsed = Number.parseFloat(draft);
+                                    const qty = draft === "" ? 0 : Number.isFinite(parsed) ? parsed : null;
+                                    if (qty === null) return;
+                                    const nextTotal = roundCurrency(qty * item.unit_price + item.tax_amount);
+                                    setDraftNumbers((prev) => ({
+                                      ...prev,
+                                      [`i:${itemIdx}:qty`]: draft,
+                                      [`i:${itemIdx}:total`]: String(nextTotal),
+                                    }));
                                     setItems((prev) =>
                                       prev.map((it, i) =>
                                         i === itemIdx
@@ -804,11 +931,24 @@ export function LineByLineReviewer({
                                   className="rounded-lg border border-indigo-400/60 bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-white sm:col-span-2"
                                 />
                                 <input
-                                  type="number"
-                                  step="0.01"
-                                  value={item.unit_price}
+                                  type="text"
+                                  inputMode="decimal"
+                                  dir="ltr"
+                                  value={draftNumbers[`i:${itemIdx}:price`] ?? String(item.unit_price)}
                                   onChange={(e) => {
-                                    const price = Number.parseFloat(e.target.value) || 0;
+                                    const draft = normalizeDecimalDraft(e.target.value);
+                                    const parsed = Number.parseFloat(draft);
+                                    const price = draft === "" ? 0 : Number.isFinite(parsed) ? parsed : null;
+                                    if (price === null) {
+                                      setDraftNumbers((prev) => ({ ...prev, [`i:${itemIdx}:price`]: draft }));
+                                      return;
+                                    }
+                                    const nextTotal = roundCurrency(item.quantity * price + item.tax_amount);
+                                    setDraftNumbers((prev) => ({
+                                      ...prev,
+                                      [`i:${itemIdx}:price`]: draft,
+                                      [`i:${itemIdx}:total`]: String(nextTotal),
+                                    }));
                                     setItems((prev) =>
                                       prev.map((it, i) =>
                                         i === itemIdx
@@ -825,11 +965,17 @@ export function LineByLineReviewer({
                                   className="rounded-lg border border-indigo-400/60 bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-white sm:col-span-2"
                                 />
                                 <input
-                                  type="number"
-                                  step="0.01"
-                                  value={item.line_total}
+                                  type="text"
+                                  inputMode="decimal"
+                                  dir="ltr"
+                                  value={draftNumbers[`i:${itemIdx}:total`] ?? String(item.line_total)}
                                   onChange={(e) => {
-                                    const total = roundCurrency(Number.parseFloat(e.target.value) || 0);
+                                    const draft = normalizeDecimalDraft(e.target.value);
+                                    setDraftNumbers((prev) => ({ ...prev, [`i:${itemIdx}:total`]: draft }));
+                                    const parsed = Number.parseFloat(draft);
+                                    const total =
+                                      draft === "" ? 0 : Number.isFinite(parsed) ? roundCurrency(parsed) : null;
+                                    if (total === null) return;
                                     setItems((prev) =>
                                       prev.map((it, i) =>
                                         i === itemIdx ? { ...it, line_total: total } : it

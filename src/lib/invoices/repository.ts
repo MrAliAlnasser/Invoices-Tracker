@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getServerEnv } from "@/lib/env";
+import { getServerEnv, maskApiKey } from "@/lib/env";
 import {
   GeminiArabicInvoiceAnalyzer,
   isGeminiSupportedInvoiceFile,
   SupabaseCooldownStore,
 } from "@/lib/gemini/client";
 import { parseFlexibleNumber } from "@/lib/invoices/arabic-utils";
+import { filterInvoices, type InvoiceFilterOptions } from "@/lib/invoices/filters";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type {
   FieldApprovalsMap,
@@ -14,23 +15,28 @@ import type {
   UserSettings,
 } from "@/types/invoice";
 
-export function buildServerAiAnalyzer(readClient: SupabaseClient): GeminiArabicInvoiceAnalyzer {
-  const env = getServerEnv();
-  const adminClient = createSupabaseAdminClient();
-  return new GeminiArabicInvoiceAnalyzer({
-    apiKey: env.geminiApiKey,
-    models: env.geminiModels,
-    ttsModels: env.geminiTtsModels,
-    ttsVoice: env.geminiTtsVoice,
-    cooldownSeconds: env.cooldownSeconds,
-    store: new SupabaseCooldownStore(readClient, adminClient),
-  });
+export function sanitizeUserSettingsRow(raw: Record<string, unknown>): UserSettings {
+  const customKey =
+    typeof raw.custom_gemini_api_key === "string"
+      ? raw.custom_gemini_api_key.trim()
+      : "";
+
+  return {
+    user_id: String(raw.user_id),
+    require_line_by_line_review: Boolean(raw.require_line_by_line_review ?? true),
+    default_currency: String(raw.default_currency ?? "SAR") || "SAR",
+    auto_delete_days:
+      typeof raw.auto_delete_days === "number" ? raw.auto_delete_days : null,
+    has_custom_api_key: Boolean(customKey),
+    custom_api_key_hint: maskApiKey(customKey),
+    updated_at: String(raw.updated_at ?? new Date().toISOString()),
+  };
 }
 
-export async function getOrCreateUserSettings(
+export async function getRawUserSettingsRow(
   supabase: SupabaseClient,
   userId: string
-): Promise<UserSettings> {
+): Promise<Record<string, unknown>> {
   const { data } = await supabase
     .from("user_settings")
     .select("*")
@@ -38,15 +44,14 @@ export async function getOrCreateUserSettings(
     .maybeSingle();
 
   if (data) {
-    return data as UserSettings;
+    return data as Record<string, unknown>;
   }
 
-  const defaults: UserSettings = {
+  const defaults = {
     user_id: userId,
     require_line_by_line_review: true,
     default_currency: "SAR",
     auto_delete_days: null,
-    updated_at: new Date().toISOString(),
   };
 
   const { data: inserted } = await supabase
@@ -55,7 +60,51 @@ export async function getOrCreateUserSettings(
     .select("*")
     .single();
 
-  return (inserted as UserSettings | null) ?? defaults;
+  return (inserted as Record<string, unknown> | null) ?? {
+    ...defaults,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export async function getOrCreateUserSettings(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<UserSettings> {
+  const row = await getRawUserSettingsRow(supabase, userId);
+  return sanitizeUserSettingsRow(row);
+}
+
+export async function buildServerAiAnalyzer(
+  readClient: SupabaseClient,
+  userId?: string
+): Promise<GeminiArabicInvoiceAnalyzer> {
+  const env = getServerEnv();
+  const adminClient = createSupabaseAdminClient();
+
+  let customKey: string | null = null;
+  if (userId) {
+    const rawSettings = await getRawUserSettingsRow(readClient, userId).catch(() => null);
+    const maybeCustom =
+      rawSettings && typeof rawSettings.custom_gemini_api_key === "string"
+        ? rawSettings.custom_gemini_api_key.trim()
+        : "";
+    if (maybeCustom) {
+      customKey = maybeCustom;
+    }
+  }
+
+  const effectiveKey = customKey || env.geminiApiKey;
+  const keySource = customKey ? "user_settings" : env.geminiApiKey ? "env" : "none";
+
+  return new GeminiArabicInvoiceAnalyzer({
+    apiKey: effectiveKey,
+    keySource,
+    models: env.geminiModels,
+    ttsModels: env.geminiTtsModels,
+    ttsVoice: env.geminiTtsVoice,
+    cooldownSeconds: env.cooldownSeconds,
+    store: new SupabaseCooldownStore(readClient, adminClient),
+  });
 }
 
 function mapRawInvoiceRow(
@@ -122,24 +171,16 @@ function mapRawInvoiceRow(
 export async function listUserInvoices(
   supabase: SupabaseClient,
   userId: string,
-  filters?: { q?: string; status?: string; ocr_status?: string }
+  filters?: InvoiceFilterOptions
 ): Promise<InvoiceRecord[]> {
   const { maxFileSizeBytes } = getServerEnv();
-  let query = supabase
+  const { data, error } = await supabase
     .from("invoices")
     .select("*, invoice_items(*)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(200);
 
-  if (filters?.status) {
-    query = query.eq("verification_status", filters.status);
-  }
-  if (filters?.ocr_status) {
-    query = query.eq("ocr_status", filters.ocr_status);
-  }
-
-  const { data, error } = await query;
   if (error) {
     throw new Error(`فشل جلب الفواتير: ${error.message}`);
   }
@@ -154,25 +195,7 @@ export async function listUserInvoices(
     )
   );
 
-  const search = filters?.q?.trim().toLowerCase();
-  if (!search) {
-    return rows;
-  }
-
-  return rows.filter((inv) => {
-    const haystack = [
-      inv.vendor_name,
-      inv.vendor_tax_number,
-      inv.invoice_number,
-      inv.file_name,
-      inv.category,
-      ...inv.items.map((it) => it.item_name),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(search);
-  });
+  return filterInvoices(rows, filters ?? {});
 }
 
 export async function getUserInvoiceById(

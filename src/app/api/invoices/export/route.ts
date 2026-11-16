@@ -3,6 +3,8 @@ import { invoicesToCsvWithBom } from "@/lib/invoices/arabic-utils";
 import { listUserInvoices } from "@/lib/invoices/repository";
 import { requireApiUser } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   const auth = await requireApiUser();
   if ("errorResponse" in auth) return auth.errorResponse;
@@ -10,8 +12,9 @@ export async function GET(request: NextRequest) {
   const { supabase, user } = auth;
   const q = request.nextUrl.searchParams.get("q") ?? undefined;
   const status = request.nextUrl.searchParams.get("status") ?? undefined;
+  const category = request.nextUrl.searchParams.get("category") ?? undefined;
 
-  const invoices = await listUserInvoices(supabase, user.id, { q, status });
+  const invoices = await listUserInvoices(supabase, user.id, { q, status, category });
   const csv = invoicesToCsvWithBom(invoices);
 
   return new NextResponse(csv, {

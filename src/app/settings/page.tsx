@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { SettingsView } from "@/components/SettingsView";
-import { getOrCreateUserSettings } from "@/lib/invoices/repository";
+import {
+  buildServerAiAnalyzer,
+  getOrCreateUserSettings,
+} from "@/lib/invoices/repository";
 import { createSupabaseServerClient, getOptionalServerUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +19,17 @@ export default async function SettingsPage() {
   }
 
   const supabase = await createSupabaseServerClient();
-  const settings = await getOrCreateUserSettings(supabase, user.id);
+  const analyzer = await buildServerAiAnalyzer(supabase, user.id);
+  const [settings, aiStatus] = await Promise.all([
+    getOrCreateUserSettings(supabase, user.id),
+    analyzer.getStatus(),
+  ]);
 
-  return <SettingsView initialSettings={settings} userEmail={user.email ?? null} />;
+  return (
+    <SettingsView
+      initialSettings={settings}
+      initialAiStatus={aiStatus}
+      userEmail={user.email ?? null}
+    />
+  );
 }

@@ -5,6 +5,26 @@ import { useRouter } from "next/navigation";
 import { Lock, Mail, Receipt, Sparkles } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
+function translateAuthError(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("invalid login credentials")) {
+    return "البريد الإلكتروني أو كلمة المرور غير صحيحة.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "البريد الإلكتروني غير مؤكد بعد — افتح رابط التفعيل في بريدك أو فعّل المستخدم من لوحة Supabase.";
+  }
+  if (lower.includes("user already registered")) {
+    return "هذا البريد الإلكتروني مسجّل مسبقًا؛ اختر تبويب تسجيل الدخول.";
+  }
+  if (lower.includes("password should be at least")) {
+    return "كلمة المرور يجب أن تتكون من 6 أحرف أو أرقام على الأقل.";
+  }
+  if (lower.includes("rate limit")) {
+    return "تم إرسال محاولات كثيرة مؤقتًا — انتظر قليلًا ثم أعد المحاولة.";
+  }
+  return raw;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -46,7 +66,8 @@ export default function LoginPage() {
         }
       }
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "تعذر إتمام العملية.");
+      const raw = err instanceof Error ? err.message : "تعذر إتمام العملية.";
+      setErrorMsg(translateAuthError(raw));
     } finally {
       setLoading(false);
     }

@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   const isRetry = "invoiceId" in parsed.data;
   const settings = await getOrCreateUserSettings(supabase, user.id);
-  const analyzer = buildServerAiAnalyzer(supabase);
+  const analyzer = await buildServerAiAnalyzer(supabase, user.id);
 
   let targetPath: string;
   let fileName: string;

@@ -72,6 +72,8 @@ export interface UserSettings {
   require_line_by_line_review: boolean;
   default_currency: string;
   auto_delete_days: number | null;
+  has_custom_api_key?: boolean;
+  custom_api_key_hint?: string | null;
   updated_at: string;
 }
 
@@ -86,6 +88,7 @@ export interface AiQuotaStatus {
   last_error_code: number | null;
   last_error: string | null;
   checked_at: string | null;
+  key_source?: "env" | "user_settings" | "none";
 }
 
 export interface DashboardKpis {

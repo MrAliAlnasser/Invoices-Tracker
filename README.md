@@ -9,15 +9,17 @@
 - **إلغاء خاصية التأكيد من الإعدادات (`/settings`)**: مع الحفظ الدائم للفواتير افتراضيًا أو تفعيل حذف تلقائي اختياري.
 - **محادثة ذكية وصوتية عن محتويات الفواتير**: اسأل الذكاء الاصطناعي كتابةً أو عبر الميكروفون بالعربية (`MediaRecorder -> Gemini Multimodal`) عن الإجماليات والضرائب والأصناف، ويرد عليك نصيًا مع النطق الصوتي العربي عبر نماذج `Gemini TTS` (`audio/wav`) وبديل المتصفح `Web Speech Synthesis` عند نفاد الرصيد.
 - **سلسلة التبديل التلقائي لـ Gemini Flash + حفظ التبريد في Postgres**: زر AI أزرق-بنفسجي عند التوفر ورمادي عند نفاد الرصيد + فحص رصيد يدوي + تعديل يدوي.
-- **تصدير `CSV` متوافق مع Excel العربي (`UTF-8 BOM`)**.
+- **تصفية وتصدير القوائم بدقة**: تبويبات حالة مع عدادات مباشرة (`الكل`، `مؤكدة ومحفوظة`، `تنتظر التأكيد`، `تحتاج مراجعة`، `بانتظار AI`، `تعديل يدوي`) مع تصفية بالتصنيف والبحث، وتصدير `CSV` متوافق مع Excel العربي (`UTF-8 BOM`).
+- **تفعيل الذكاء الاصطناعي بطريقتين**: عبر متغير البيئة (`GEMINI_API_KEY` أو `GOOGLE_API_KEY`) أو مباشرة من داخل صفحة الإعدادات (`/settings#ai-setup`) لحفظ المفتاح لحسابك واختباره فورًا.
 
 ## خطوات التشغيل السريع (`GitHub + Vercel + Supabase`)
 
 1. **إعداد قاعدة البيانات في Supabase**:
    - أنشئ مشروعًا مجانيًا على [supabase.com](https://supabase.com).
-   - افتح **SQL Editor** والصق كامل محتوى الملف `supabase/schema.sql` ثم اضغط **Run**.
-2. **الحصول على مفتاح الذكاء الاصطناعي**:
+   - افتح **SQL Editor** والصق كامل محتوى الملف `supabase/schema.sql` ثم اضغط **Run** (للمشاريع المنشأة سابقًا، نفّذ أيضًا سطر الترقية `ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS custom_gemini_api_key TEXT NULL;`).
+2. **الحصول على مفتاح الذكاء الاصطناعي وتفعيله**:
    - أنشئ مفتاح API مجانيًا من [Google AI Studio](https://aistudio.google.com/apikey).
+   - أضفه في Vercel كمتغير بيئة باسم `GEMINI_API_KEY` أو `GOOGLE_API_KEY` (ثم أعد النشر)، أو أدخله مباشرة من داخل التطبيق في `/settings#ai-setup`.
 3. **ضبط متغيرات البيئة محليًا (`.env.local`) أو في Vercel**:
    - انسخ `.env.example` إلى `.env.local` واملأ `NEXT_PUBLIC_SUPABASE_URL`، `NEXT_PUBLIC_SUPABASE_ANON_KEY`، `SUPABASE_SERVICE_ROLE_KEY`، `GEMINI_API_KEY`، و`CRON_SECRET`.
 4. **التشغيل والاختبار محليًا**:

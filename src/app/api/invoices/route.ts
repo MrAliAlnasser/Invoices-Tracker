@@ -7,6 +7,8 @@ import {
 } from "@/lib/invoices/repository";
 import { requireApiUser } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   const auth = await requireApiUser();
   if ("errorResponse" in auth) return auth.errorResponse;
@@ -15,12 +17,12 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const q = searchParams.get("q") ?? undefined;
   const status = searchParams.get("status") ?? undefined;
-  const ocrStatus = searchParams.get("ocr_status") ?? undefined;
+  const category = searchParams.get("category") ?? undefined;
 
   try {
-    const analyzer = buildServerAiAnalyzer(supabase);
+    const analyzer = await buildServerAiAnalyzer(supabase, user.id);
     const [invoices, settings, aiStatus] = await Promise.all([
-      listUserInvoices(supabase, user.id, { q, status, ocr_status: ocrStatus }),
+      listUserInvoices(supabase, user.id, { q, status, category }),
       getOrCreateUserSettings(supabase, user.id),
       analyzer.getStatus(),
     ]);

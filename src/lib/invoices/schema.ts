@@ -111,6 +111,7 @@ export const SettingsUpdateSchema = z.object({
   require_line_by_line_review: z.boolean().optional(),
   default_currency: z.string().trim().min(2).max(10).optional(),
   auto_delete_days: z.number().int().min(1).max(3650).nullable().optional(),
+  custom_gemini_api_key: z.string().trim().max(300).nullable().optional(),
 });
 
 export const UploadSignRequestSchema = z.object({

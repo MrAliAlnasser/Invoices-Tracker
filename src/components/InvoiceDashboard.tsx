@@ -11,12 +11,18 @@ import {
   FileText,
   Mic,
   Pencil,
+  RefreshCw,
   Search,
   Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  computeFilterTabCounts,
+  filterInvoices,
+  type InvoiceListFilterTab,
+} from "@/lib/invoices/filters";
 import { computeDashboardKpis, formatMoney } from "@/lib/invoices/kpis";
 import type { AiQuotaStatus, InvoiceRecord, UserSettings } from "@/types/invoice";
 import { InvoiceAiAssistant } from "./InvoiceAiAssistant";
@@ -63,13 +69,15 @@ export function InvoiceDashboard({
   userEmail,
 }: InvoiceDashboardProps) {
   const [invoices, setInvoices] = useState<InvoiceRecord[]>(initialInvoices);
-  const [settings] = useState<UserSettings>(initialSettings);
+  const [settings, setSettings] = useState<UserSettings>(initialSettings);
   const [aiStatus, setAiStatus] = useState<AiQuotaStatus>(initialAiStatus);
   const [checkingAi, setCheckingAi] = useState(false);
+  const [refreshingList, setRefreshingList] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<InvoiceListFilterTab>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
 
   // Upload states
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -88,40 +96,50 @@ export function InvoiceDashboard({
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantFocusInvoiceId, setAssistantFocusInvoiceId] = useState<string | null>(null);
 
-  const filteredInvoices = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return invoices.filter((inv) => {
-      if (statusFilter === "verified" && inv.verification_status !== "verified") return false;
-      if (statusFilter === "pending_review" && inv.verification_status !== "pending_review")
-        return false;
-      if (statusFilter === "pending_ai" && inv.ocr_status !== "pending_ai") return false;
-      if (!q) return true;
+  const tabCounts = useMemo(() => computeFilterTabCounts(invoices), [invoices]);
 
-      const haystack = [
-        inv.vendor_name,
-        inv.vendor_tax_number,
-        inv.invoice_number,
-        inv.file_name,
-        inv.category,
-        ...inv.items.map((it) => it.item_name),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [invoices, searchQuery, statusFilter]);
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const inv of invoices) {
+      const cat = inv.category?.trim();
+      if (cat) set.add(cat);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ar"));
+  }, [invoices]);
+
+  const filteredInvoices = useMemo(
+    () =>
+      filterInvoices(invoices, {
+        q: searchQuery,
+        status: statusFilter,
+        category: categoryFilter,
+      }),
+    [invoices, searchQuery, statusFilter, categoryFilter]
+  );
+
+  const validAssistantFocusId = useMemo(() => {
+    if (!assistantFocusInvoiceId) return "";
+    return invoices.some((inv) => inv.id === assistantFocusInvoiceId)
+      ? assistantFocusInvoiceId
+      : "";
+  }, [invoices, assistantFocusInvoiceId]);
 
   const kpis = useMemo(() => computeDashboardKpis(invoices), [invoices]);
 
   const refreshInvoices = async () => {
-    const resp = await fetch("/api/invoices");
-    const data = await resp.json();
-    if (!resp.ok) {
-      throw new Error(data.error || "تعذر تحديث قائمة الفواتير.");
+    setRefreshingList(true);
+    try {
+      const resp = await fetch("/api/invoices");
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || "تعذر تحديث قائمة الفواتير.");
+      }
+      setInvoices(data.invoices ?? []);
+      if (data.settings) setSettings(data.settings);
+      if (data.ai_status) setAiStatus(data.ai_status);
+    } finally {
+      setRefreshingList(false);
     }
-    setInvoices(data.invoices ?? []);
-    if (data.ai_status) setAiStatus(data.ai_status);
   };
 
   const openReviewerModal = async (invoice: InvoiceRecord) => {
@@ -346,6 +364,25 @@ export function InvoiceDashboard({
         activePage="dashboard"
       />
 
+      {!aiStatus.enabled && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-100 sm:text-sm">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+            <span>
+              <strong>الذكاء الاصطناعي غير مفعّل حاليًا:</strong> لم يتم العثور على مفتاح{" "}
+              <code className="font-mono text-amber-200">GEMINI_API_KEY</code> في متغيرات السيرفر
+              أو حسابك. يمكنك تفعيله مباشرةً الآن.
+            </span>
+          </div>
+          <Link
+            href="/settings#ai-setup"
+            className="btn-ai-ready rounded-xl px-3.5 py-1.5 text-xs font-bold"
+          >
+            تفعيل الذكاء الاصطناعي من الإعدادات
+          </Link>
+        </div>
+      )}
+
       <KpiCards kpis={kpis} currency={settings.default_currency || "SAR"} />
 
       {/* Direct Dropzone Upload Section */}
@@ -453,28 +490,49 @@ export function InvoiceDashboard({
       <section className="glass-card rounded-3xl p-5 sm:p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            {[
-              { id: "all", label: "الكل" },
-              { id: "verified", label: "معتمدة" },
-              { id: "pending_review", label: "بانتظار التأكيد" },
-              { id: "pending_ai", label: "بانتظار AI" },
-            ].map((tab) => (
+            {(
+              [
+                { id: "all", label: "الكل", count: tabCounts.all },
+                { id: "verified_all", label: "معتمدة / محفوظة", count: tabCounts.verified_all },
+                { id: "pending_review", label: "بانتظار التأكيد", count: tabCounts.pending_review },
+                { id: "partial_rejected", label: "تتطلب تصحيحًا", count: tabCounts.partial_rejected },
+                { id: "pending_ai", label: "بانتظار AI", count: tabCounts.pending_ai },
+                { id: "manual", label: "تعديل يدوي", count: tabCounts.manual },
+              ] as const
+            ).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setStatusFilter(tab.id)}
-                className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
                   statusFilter === tab.id
                     ? "border-indigo-400 bg-indigo-500/20 text-white"
                     : "border-slate-700/80 bg-slate-900/60 text-slate-400 hover:text-white"
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                <span className="rounded-full bg-slate-950/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-300 tabular-nums">
+                  {tab.count}
+                </span>
               </button>
             ))}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="تصفية حسب التصنيف"
+              className="rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-200 focus:border-indigo-400 focus:outline-none"
+            >
+              <option value="all">كل التصنيفات</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+
             <div className="relative">
               <Search className="pointer-events-none absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-500" />
               <input
@@ -482,11 +540,23 @@ export function InvoiceDashboard({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="بحث بالمورد، رقم الفاتورة، أو الصنف..."
-                className="w-64 rounded-xl border border-slate-700 bg-slate-950/80 py-2 pr-9 pl-3 text-xs text-white placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none"
+                className="w-60 rounded-xl border border-slate-700 bg-slate-950/80 py-2 pr-9 pl-3 text-xs text-white placeholder:text-slate-500 focus:border-indigo-400 focus:outline-none"
               />
             </div>
+
+            <button
+              type="button"
+              disabled={refreshingList}
+              onClick={() => void refreshInvoices().catch(() => {})}
+              title="تحديث القائمة"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs font-medium text-slate-200 hover:border-slate-500 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshingList ? "animate-spin" : ""}`} />
+              <span>تحديث</span>
+            </button>
+
             <a
-              href={`/api/invoices/export?q=${encodeURIComponent(searchQuery)}`}
+              href={`/api/invoices/export?q=${encodeURIComponent(searchQuery)}&status=${encodeURIComponent(statusFilter)}&category=${encodeURIComponent(categoryFilter)}`}
               className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/35 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/25"
             >
               <FileSpreadsheet className="h-3.5 w-3.5" />
@@ -697,7 +767,7 @@ export function InvoiceDashboard({
         isOpen={assistantOpen}
         onClose={() => setAssistantOpen(false)}
         invoices={invoices}
-        focusInvoiceId={assistantFocusInvoiceId ?? ""}
+        focusInvoiceId={validAssistantFocusId}
         onFocusInvoiceChange={(id) => setAssistantFocusInvoiceId(id || null)}
         aiStatus={aiStatus}
         onAiStatusChange={setAiStatus}
