@@ -375,7 +375,9 @@ export class GeminiArabicInvoiceAnalyzer {
     this.store = options.store ?? new MemoryCooldownStore();
     this.client =
       options.client ??
-      (options.apiKey ? (new GoogleGenAI({ apiKey: options.apiKey }) as GenAiLikeClient) : null);
+      (options.apiKey
+        ? (new GoogleGenAI({ apiKey: options.apiKey, apiVersion: "v1beta" }) as GenAiLikeClient)
+        : null);
   }
 
   async getStatus(now = new Date()): Promise<AiQuotaStatus> {
@@ -559,7 +561,7 @@ export class GeminiArabicInvoiceAnalyzer {
             model: activeModel,
             contents: "Reply OK",
             config: {
-              maxOutputTokens: 4,
+              maxOutputTokens: 16,
               temperature: 0,
             },
           });
